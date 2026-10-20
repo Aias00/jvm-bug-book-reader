@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="十个 JVM 线上故障教学案例：从症状、定位到根因与修复。免费在线阅读。">
+  <meta name="color-scheme" content="light dark">
+  <title>JVM 线上故障排查实战 · 在线阅读</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23102130'/%3E%3Ctext x='6' y='41' font-size='25' fill='%2342d6b8'%3EJVM%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="reader.css">
+  <script src="reader.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#book">跳到正文</a>
+<header class="topbar">
+  <button id="menu" type="button" aria-expanded="false" aria-controls="sidebar">目录</button>
+  <a class="brand" href="#top">JVM <span>线上故障排查实战</span></a>
+  <div class="settings">
+    <label>字号 <select id="font-size" aria-label="正文字号"><option value="17">小</option><option value="19" selected>中</option><option value="22">大</option></select></label>
+    <label><span class="theme-label">主题 </span><select id="theme" aria-label="阅读主题"><option value="auto">跟随系统</option><option value="light">日间</option><option value="dark">夜间</option><option value="paper">纸色</option></select></label>
+  </div>
+</header>
+<div class="progress" aria-hidden="true"><div id="progress-bar"></div></div>
+<aside id="sidebar" aria-label="章节导航">
+  <div class="sidebar-title">阅读目录 <span>10 个实战案例</span></div>
+  <label class="search-label" for="search">搜索全书</label>
+  <input id="search" type="search" placeholder="搜索 GC、线程池、类加载…" autocomplete="off">
+  <div id="search-status" role="status" aria-live="polite"></div>
+  <nav id="results" aria-label="搜索结果" hidden></nav>
+  <nav id="chapters" aria-label="章节"><a href="#前言先把现场留住">前言：先把现场留住</a>
+<a href="#第一章每隔几分钟全站停一下gc-抖动">第一章：每隔几分钟，全站停一下——GC 抖动</a>
+<a href="#第二章重启后三小时又快满了缓存泄漏">第二章：重启后三小时，又快满了——缓存泄漏</a>
+<a href="#第三章只有跑过报表的线程会变胖threadlocal-残留">第三章：只有跑过报表的线程会变胖——ThreadLocal 残留</a>
+<a href="#第四章cpu-很闲接口却全超时线程池耗尽">第四章：CPU 很闲，接口却全超时——线程池耗尽</a>
+<a href="#第五章堆只用一半进程却撑不住直接内存">第五章：堆只用一半，进程却撑不住——直接内存</a>
+<a href="#第六章没有高-cpu也没有-gc锁住的转账">第六章：没有高 CPU，也没有 GC——锁住的转账</a>
+<a href="#第七章测试能跑生产却找不到方法类加载冲突">第七章：测试能跑，生产却找不到方法——类加载冲突</a>
+<a href="#第八章规则越更新元空间越大类加载器泄漏">第八章：规则越更新，元空间越大——类加载器泄漏</a>
+<a href="#第九章没有-oom-日志进程突然没了容器内存超限">第九章：没有 OOM 日志，进程突然没了——容器内存超限</a>
+<a href="#第十章一条请求烧满一个核cpu-热点与正则回溯">第十章：一条请求烧满一个核——CPU 热点与正则回溯</a>
+<a href="#收束把一次排查变成团队能力">收束：把一次排查变成团队能力</a>
+<a href="#附录-a命令使用前的检查">附录 A：命令使用前的检查</a>
+<a href="#附录-b版本与术语速查">附录 B：版本与术语速查</a>
+<a href="#附录-c继续查证的官方入口">附录 C：继续查证的官方入口</a></nav>
+  <a class="download" href="book.epub" download>↓ 下载 EPUB，离线阅读</a>
+  <p class="privacy">阅读进度与偏好仅保存在当前浏览器。</p>
+</aside>
+<main id="book">
+  <div class="hero" id="top">
+    <div><p class="eyebrow">THE JVM INCIDENT CASEBOOK</p><h1>JVM 线上故障<br>排查实战</h1><p class="lead">从告警响起，到证据闭环。<br>十个故事，走完症状 → 定位 → 根因 → 修复。</p><div class="tags"><span>HotSpot</span><span>JDK 17</span><span>Linux</span></div><a class="start" href="#前言先把现场留住">开始阅读 ↗</a><button id="resume" type="button" hidden>继续上次阅读</button></div>
+    <img src="cover.png" alt="《JVM 线上故障排查实战》封面" width="240" height="360">
+  </div>
+  <div class="reader-note">本书为教学构造案例，默认 HotSpot JDK 17 / G1。诊断前请核对版本和命令影响。</div>
+  <article id="content"><section id="前言先把现场留住" class="level1">
+<h1>前言：先把现场留住</h1>
+<p>凌晨两点，告警把人叫醒。监控里每条曲线都像线索：CPU 高，响应慢，堆快满了，线程也多。最危险的时刻，往往是有人说：“先把堆调大试试。”</p>
+<p>排查不是猜中一个参数，而是建立一条可以被反驳的证据链。响应时间上升，是请求在运行、等待锁，还是排队？内存上升，是分配变快、对象活得更久，还是堆外占用？重启让曲线恢复，并不能回答这些问题。</p>
+<p>这本书把故障写成故事。每章都有症状、定位、根因和修复；读到定位时，先别急着看答案，试着问：眼前的证据能排除什么？还缺哪一块？</p>
+<p><strong>案例声明。</strong> 本书所有公司、时间线、数值、日志片段与事故情节均为教学构造；日志为节选或归纳示意，不是可逐字匹配的真实运行输出。代码片段用于说明机制，不是完整生产实现。书中的恢复结果是案例设定，不代表作者做过相应线上实验。</p>
+<p><strong>环境约定。</strong> 默认 Linux、HotSpot、JDK 17、G1；标有版本差异的地方另作说明。JDK 8 的 GC 日志参数、JDK 21 的虚拟线程行为不能直接套用。发行版与补丁版本也会影响诊断命令，先运行目标环境的 <code>jcmd &lt;pid&gt; help</code>。本书聚焦平台线程；虚拟线程需要额外检查调度器、固定线程和下游并发限制。</p>
+<p><strong>先救服务，再追根因。</strong> 严重事故先摘流、降级、限制入口或回滚。保留一台故障实例做取证，通常比把整个集群一起重启更有价值；但如果继续保留会扩大损失，就先恢复。记录操作时间，后续才能区分“自然变化”与“人为干预”。</p>
+<p><strong>取证的边界。</strong> 堆转储、类直方图、线程转储、JFR 和日志都可能含用户信息、令牌或业务数据。采集前估算空间和停顿代价，文件放到受控目录，限定权限，分析结束后按保留策略清理。不要把生产转储直接上传到公共网站。</p>
+<p>阅读顺序可以跟随事故走：暂停尖峰看第一章；堆底线抬高看第二、三章；请求排队看第四章；RSS 与堆不一致看第五、九章；线程卡住看第六章；启动或调用时报链接错误看第七章；元空间持续增加看第八章；CPU 突升看第十章。</p>
+</section>
+<section id="第一章每隔几分钟全站停一下gc-抖动" class="level1">
+<h1>第一章：每隔几分钟，全站停一下——GC 抖动</h1>
+<section id="症状平均值还好尾延迟失控" class="level2">
+<h2>症状：平均值还好，尾延迟失控</h2>
+<p>周一上午，商品服务的吞吐没有明显变化，平均响应时间仍是几十毫秒，P99 却周期性超过一秒。值班同学发现堆曲线像锯齿，第一反应是“堆太小”。但锯齿是正常 GC 也会出现的形状，单凭它无法解释事故。</p>
+<p>这次发布增加了一个导出入口。入口调用量不大，因而没有立即成为嫌疑对象。真正引起注意的是：每次导出开始后不久，普通查询也会慢下来。</p>
+</section>
+<section id="定位把停顿放回同一条时间线上" class="level2">
+<h2>定位：把停顿放回同一条时间线上</h2>
+<p>团队先对齐应用请求日志、GC 日志与主机指标的时区和时间。服务预先启用了滚动日志：</p>
+<pre class="text"><code>-Xlog:gc*,safepoint:file=/var/log/app/gc.log:time,uptime,level,tags:filecount=5,filesize=20M</code></pre>
+<p>这是 JDK 17 的启动参数，日志目录须可写。JDK 8 常见的是 <code>-XX:+PrintGCDetails</code> 等旧参数，不能照搬上述写法。日志轮转大小也不是“零成本”设置，应计入磁盘预算。</p>
+<p>归纳后的证据如下：</p>
+<table>
+<thead>
+<tr>
+<th>时间</th>
+<th>请求侧</th>
+<th>JVM 侧</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10:12:01</td>
+<td>导出开始</td>
+<td>分配速率明显增加</td>
+</tr>
+<tr>
+<td>10:12:03</td>
+<td>普通查询 P99 上升</td>
+<td>出现大对象相关 GC 活动</td>
+</tr>
+<tr>
+<td>10:12:05</td>
+<td>多个请求同时超时</td>
+<td>一次约 900 ms 的 Full GC</td>
+</tr>
+</tbody>
+</table>
+<p>日志中需要看的是暂停类型、持续时间、回收前后占用以及触发原因，不能把所有包含 <code>GC</code> 的行都当作暂停。G1 的并发阶段与 Stop-The-World 阶段有不同含义。若业务卡顿并未与 GC 暂停重合，就要继续看安全点、CPU 限流或锁。</p>
+<p>同一实例上，他们录制了一段有上限的 JFR：</p>
+<pre class="bash"><code>jcmd 24680 JFR.start name=incident settings=profile duration=120s filename=/secure/incident.jfr maxsize=128m</code></pre>
+<p><code>24680</code> 是示例 PID。<code>profile</code> 配置会增加采样负担，事件也未必覆盖每一次分配；先确认容量与性能预算。JFR 的分配采样把热点指向导出路径中的大 <code>byte[]</code>，代码审查随后证实：实现先把完整文件写入内存，再调用 <code>toByteArray()</code> 复制一份后返回。</p>
+</section>
+<section id="根因一次导出制造多份大对象" class="level2">
+<h2>根因：一次导出，制造多份大对象</h2>
+<p>服务使用 4 GiB 堆，当前 G1 region 为 2 MiB。G1 中达到 region 一半及以上的对象会作为 humongous 对象处理；精确边界还要考虑对象实际大小与对齐。几百 MiB 的数组显然远超这个尺度。</p>
+<p>导出过程同时保留原始数据、序列化缓冲区与返回数组；多个导出重叠时，短时间峰值远高于文件最终大小。humongous 分配需要连续 region，回收节奏与空间布局又让问题加剧。这里的根因并不是“用了大对象就必然 Full GC”，而是<strong>大对象分配突发、并发导出和有限余量共同造成分配压力</strong>，日志中的 Full GC 与代码中的对象生命周期支持这条解释。</p>
+</section>
+<section id="修复让内存峰值跟分块大小走" class="level2">
+<h2>修复：让内存峰值跟分块大小走</h2>
+<p>当班先关闭同步导出入口，改为离线任务，并限制同时执行的导出数。随后将实现改为分批查询、分块编码和流式写出，取消完整结果的内存副本。流式写出仍需处理慢客户端、取消和超时，否则只是把内存问题换成连接占用问题。</p>
+<p>验证使用最大允许导出规模和真实并发组合，检查峰值活跃堆、分配速率、GC 暂停分位数，以及普通查询的尾延迟。案例设定中，修复后普通查询恢复，导出内存峰值随分块大小而非总文件大小增长。增大堆可作为有容量依据的临时缓冲，不能替代生命周期修复。</p>
+</section>
+<section id="复盘别用平均延迟解释暂停" class="level2">
+<h2>复盘：别用平均延迟解释暂停</h2>
+<p>暂停事故要看尾延迟与时间相关性。保留 GC 原因和分配热点，再决定是否调整 region、堆或收集器。切换收集器可能改变停顿表现，却不会消除无限制的内存峰值。</p>
+</section>
+</section>
+<section id="第二章重启后三小时又快满了缓存泄漏" class="level1">
+<h1>第二章：重启后三小时，又快满了——缓存泄漏</h1>
+<section id="症状回收后的底线不断抬高" class="level2">
+<h2>症状：回收后的底线不断抬高</h2>
+<p>订单查询服务每次重启都能恢复，但几小时后开始频繁 GC。总请求量稳定，老年代在回收后仍一次比一次高。团队之前连续两次扩堆，恢复窗口变长了，故障却没有消失。</p>
+<p>“堆已使用”上升不等于泄漏。业务缓存预热、突发请求和批处理都可能让对象暂时存活。更强的信号是：在相近负载、相近回收阶段下，存活集合持续增加，而且没有业务上合理的上界。</p>
+</section>
+<section id="定位谁在持有这些对象" class="level2">
+<h2>定位：谁在持有这些对象</h2>
+<p>在摘流实例上，团队先采集类直方图：</p>
+<pre class="bash"><code>jcmd 24680 GC.class_histogram &gt; /secure/histo.txt</code></pre>
+<p>这不是无停顿的轻量命令；应阅读目标 JDK 的命令帮助，理解存活对象统计与 GC 的关系，再决定是否执行。两次可比快照显示 <code>ConcurrentHashMap$Node</code>、订单摘要和字符串一起增长。直方图只告诉我们“什么多”，无法告诉我们“为什么活着”。</p>
+<p>团队预留了转储空间，确认不会挤满应用盘，再在已摘流实例采集：</p>
+<pre class="bash"><code>jcmd 24680 GC.heap_dump /secure/order-heap.hprof</code></pre>
+<p>默认行为、是否触发 Full GC 及选项以目标版本帮助为准。转储可能带来显著暂停。文件大小与堆使用有关，不能保证恰好等于 <code>-Xmx</code>。</p>
+<p>在 Eclipse MAT 中，他们先看 dominator tree，再对占用最大的缓存查看到 GC Roots 的路径。支配树体现保留关系；shallow heap 是对象自身大小，retained heap 是移除该对象后理论上可释放的对象集合大小，两者不能混用。</p>
+<p>路径简化为：</p>
+<pre class="text"><code>应用类的 static 字段
+  → OrderSummaryCache
+    → ConcurrentHashMap
+      → tenantId + requestId
+        → OrderSummary</code></pre>
+</section>
+<section id="根因把每次请求当成新的缓存条目" class="level2">
+<h2>根因：把每次请求当成新的缓存条目</h2>
+<p>代码原本想缓存“租户最近订单摘要”，却把请求追踪 ID 拼进了键。每个请求都会产生新键，命中率接近零。缓存没有容量限制，也没有过期策略。它既保留了所有结果，也没有提供预期收益。</p>
+<p>这条证据链比“Map 很大”更完整：业务键语义解释了唯一键持续增长，根路径解释了对象无法回收，流量与条目数的增长关系解释了为何扩堆只延后故障。</p>
+</section>
+<section id="修复先定义可接受的缓存语义" class="level2">
+<h2>修复：先定义可接受的缓存语义</h2>
+<p>紧急修复是关闭这层缓存，同时对数据库加入口限流，避免缓存撤销后击穿下游。正式修复将键改为租户及查询条件，设置容量或权重上限、过期策略，并限制单条结果大小。</p>
+<p>TTL 并不天然构成内存上限。在到期之前，高基数请求仍可产生大量条目；某些缓存的过期清理也并非到点立即发生。应按“条目数量 × 单条保留大小 + 索引开销”估算，并在压力测试中观察实际占用。</p>
+<p>验证至少覆盖超过原故障窗口的连续流量、持续变化的键、热点键和超大结果。检查命中率、驱逐量、条目数、回收后堆占用与下游负载。案例中，条目数触顶后稳定，回收后堆占用进入平台期。</p>
+</section>
+<section id="复盘泄漏是生命周期违约" class="level2">
+<h2>复盘：泄漏是生命周期违约</h2>
+<p>Java 不会因为有垃圾收集器就自动理解业务寿命。对象仍然可达，但已经没有业务用途，就是常见的逻辑泄漏。排查最终必须回答：谁持有它，它应该什么时候被释放？</p>
+</section>
+</section>
+<section id="第三章只有跑过报表的线程会变胖threadlocal-残留" class="level1">
+<h1>第三章：只有跑过报表的线程会变胖——ThreadLocal 残留</h1>
+<section id="症状请求结束数据却没有离开" class="level2">
+<h2>症状：请求结束，数据却没有离开</h2>
+<p>报表服务启用了一个“减少重复分配”的优化：把临时上下文放进 <code>ThreadLocal</code>。发布后短请求仍正常，但只要大报表运行过一轮，回收后的堆占用就会跃升，而且长时间不下降。</p>
+<p>这次增长不是随请求数量线性增加，而是随“曾处理过大报表的工作线程数”增加。这个形状把调查方向从全局缓存引向了线程生命周期。</p>
+</section>
+<section id="定位从-gc-root-追到工作线程" class="level2">
+<h2>定位：从 GC Root 追到工作线程</h2>
+<p>转储中，大量大数组由工作线程持有。简化路径为：</p>
+<pre class="text"><code>池中的 Thread
+  → threadLocals
+    → ThreadLocalMap.Entry
+      → value: ReportContext
+        → 临时 byte[]</code></pre>
+<p>有些条目的 key 仍有效，有些 key 已变为 <code>null</code>。这两种情况都可能保留 value，不能只搜索“key 为空”的条目。线程转储确认这些工作线程长期存活；业务日志则显示相应报表早已结束。</p>
+<p>团队检查到以下模式：</p>
+<pre class="java"><code>private static final ThreadLocal&lt;ReportContext&gt; CONTEXT = new ThreadLocal&lt;&gt;();
+
+void handle(Request request) {
+    CONTEXT.set(buildContext(request));
+    render(request);  // 异常路径直接返回，没有清理
+}</code></pre>
+</section>
+<section id="根因弱引用没有替业务完成清理" class="level2">
+<h2>根因：弱引用没有替业务完成清理</h2>
+<p><code>ThreadLocalMap</code> 的 key 是弱引用，但 value 不是。即使 key 被回收，value 也未必立即消失；清理与后续访问及内部清理逻辑相关。更常见的情况是静态 <code>ThreadLocal</code> 一直活着，工作线程也一直活着，于是 value 被稳定保留。</p>
+<p>除了内存问题，这个实现还有正确性风险：线程复用后，下一次请求可能读到上一次的租户或鉴权上下文。泄漏修复必须同时检查数据隔离。</p>
+</section>
+<section id="修复把清理放进确定执行的边界" class="level2">
+<h2>修复：把清理放进确定执行的边界</h2>
+<pre class="java"><code>void handle(Request request) {
+    try {
+        CONTEXT.set(buildContext(request));
+        render(request);
+    } finally {
+        CONTEXT.remove();
+    }
+}</code></pre>
+<p>这个模式假设当前方法拥有上下文的完整生命周期。如果存在嵌套调用，内层直接 <code>remove()</code> 会破坏外层上下文，应明确所有权，或保存并恢复先前状态。异步任务跨线程时，也不能假设调用线程的 <code>finally</code> 会清理另一个线程的局部变量。</p>
+<p>当班通过关闭大报表入口并分批替换实例止血。正式实现移除了大缓冲区的线程局部缓存，只保留必要的小上下文；框架入口统一设置和清理，取消重复的业务层维护。</p>
+<p>验证包含正常、异常、取消以及同一工作线程连续处理两个租户的路径。连续运行多个批次后，回收后堆不再按线程数量阶梯式增长，第二个请求也无法读到前一个请求的上下文。</p>
+</section>
+<section id="复盘优化必须写明寿命" class="level2">
+<h2>复盘：优化必须写明寿命</h2>
+<p>“复用对象”会把短命对象变成长命对象。只有当复用收益、大小上界和释放时机都明确时，这项优化才有可评估的成本。</p>
+</section>
+</section>
+<section id="第四章cpu-很闲接口却全超时线程池耗尽" class="level1">
+<h1>第四章：CPU 很闲，接口却全超时——线程池耗尽</h1>
+<section id="症状机器不忙请求走不动" class="level2">
+<h2>症状：机器不忙，请求走不动</h2>
+<p>聚合接口开始大面积超时，CPU 只有 25%，GC 也平稳。入口线程池的活动线程数贴住 200，排队数还在上升。有人提议把最大线程数加到 800，因为“机器还有余力”。</p>
+<p>负责人先按住了配置变更。CPU 空闲只说明处理器没在忙，不能说明数据库、连接池、远端服务还有容量。更多等待线程可能扩大正在承受的故障。</p>
+</section>
+<section id="定位线程在等谁" class="level2">
+<h2>定位：线程在等谁</h2>
+<p>团队连续采集三份线程转储，每份间隔约十秒：</p>
+<pre class="bash"><code>jcmd 24680 Thread.print -l &gt; /secure/threads-1.txt</code></pre>
+<p>后续文件使用不同名字。单次转储是瞬时照片，连续快照才能识别持续等待。多数工作线程都停在同一个 HTTP 客户端读取响应的调用栈；一部分等待连接池借用。连接池活动连接贴近上限，等待时间上升，远端服务同期出现长尾。</p>
+<p><code>WAITING</code>、<code>TIMED_WAITING</code> 和 <code>RUNNABLE</code> 不是业务好坏的直接判定。网络阻塞可能显示为 <code>RUNNABLE</code>，必须结合具体栈帧和连接指标。调查还要区分排队时间、连接获取、建连和响应读取，它们有不同的控制参数。</p>
+</section>
+<section id="根因没有整体预算的等待" class="level2">
+<h2>根因：没有整体预算的等待</h2>
+<p>下游响应从约 80 ms 变成 8 s，而业务超时只包住最外层返回，没有可靠地终止底层网络请求。入口虽然超时，线程与连接仍被占用。调用方又立即重试，扩大了请求数。</p>
+<p>Little 定律在稳定区间给出一个量级判断：平均在途量约为到达率乘平均停留时间。若每秒 100 次调用、平均占用 8 秒，需要约 800 个在途位置；200 个线程必然无法维持相同吞吐。这个估算不适用于无限增长的非稳态队列，也不是线程配置公式，却足以否定“CPU 低就没有容量问题”。</p>
+<p>队列还让故障延后显现：请求进入执行时，上游早已放弃，工作却继续消耗下游资源。</p>
+</section>
+<section id="修复让预算传到真正等待的地方" class="level2">
+<h2>修复：让预算传到真正等待的地方</h2>
+<p>当班限流并关闭非核心聚合字段，暂停自动重试。正式修复为连接获取、建连、读取和整次调用设置协调的时间预算，并确认客户端实际支持的取消语义。读取超时有时限制的是两次读取之间的间隔，不等于完整请求的总时限。</p>
+<p>线程池改为有界队列，下游按依赖分别限制并发。拒绝策略返回可解释的过载结果；不能随手使用 <code>CallerRunsPolicy</code>，否则任务可能阻塞入口线程或事件循环。重试只用于适合重试的失败，受总预算、次数、退避与幂等约束。</p>
+<p>验证用故障注入让下游变慢、断连和只回少量数据，检查线程数、队列年龄、连接归还和恢复时间。案例中，下游恶化时入口主动降级，队列不再无限积压；远端恢复后，无须重启即可恢复吞吐。</p>
+</section>
+<section id="复盘容量是整条链路的属性" class="level2">
+<h2>复盘：容量是整条链路的属性</h2>
+<p>线程池、连接池和远端容量共同决定可承受的并发。每个等待点都应有上界，每个超时都应回答“谁停止了什么”。</p>
+</section>
+</section>
+<section id="第五章堆只用一半进程却撑不住直接内存" class="level1">
+<h1>第五章：堆只用一半，进程却撑不住——直接内存</h1>
+<section id="症状heap-图正常rss-越走越高" class="level2">
+<h2>症状：Heap 图正常，RSS 越走越高</h2>
+<p>文件代理服务出现 <code>OutOfMemoryError: Cannot reserve ... bytes of direct buffer memory</code> 一类错误。监控中的 Java 堆占用并不高，但进程 RSS 已接近容器限制。团队第一次意识到：<code>-Xmx</code> 只是堆上限，不是进程总内存上限。</p>
+<p>异常文本随版本和调用路径变化。直接内存不足也可能以框架异常呈现；如果只有容器杀进程而没有 Java 异常，则还要走第九章的证据链。</p>
+</section>
+<section id="定位把堆外分成几本账" class="level2">
+<h2>定位：把堆外分成几本账</h2>
+<p>他们先记录 RSS、容器内存及 <code>BufferPoolMXBean</code> 的 direct、mapped 指标。标准 BufferPool 指标主要反映相应 JDK 缓冲池，不能覆盖全部 JNI 分配或所有第三方原生内存池。框架自己的分配器指标必须一起看。</p>
+<p>预先启用 NMT 的实例可以比较原生内存分类：</p>
+<pre class="text"><code>-XX:NativeMemoryTracking=summary</code></pre>
+<pre class="bash"><code>jcmd 24680 VM.native_memory baseline
+jcmd 24680 VM.native_memory summary.diff scale=MB</code></pre>
+<p>两条命令应间隔一段有代表性的负载时间。NMT 需要提前启用，并有自身开销；它跟踪 HotSpot 相关分配，不是进程内所有原生分配的完整账本。reserved、committed 和 RSS 是不同口径，不应期待三者相等。</p>
+<p>本案中，框架 direct memory 使用量随失败请求增加，而完成请求数没有同比增长。对异常分支的审查发现，一个采用引用计数的网络缓冲区在正常路径释放，在校验失败路径遗漏释放。</p>
+</section>
+<section id="根因java-对象可回收不代表资源及时归还" class="level2">
+<h2>根因：Java 对象可回收，不代表资源及时归还</h2>
+<p>引用计数缓冲区的寿命由框架约定管理。持有者必须清楚何时转移所有权、何时释放，不能假定 Java GC 会按业务期望归还原生池资源。反过来，重复释放也会导致读取已释放内存等错误。</p>
+<p>这与普通 <code>ByteBuffer.allocateDirect()</code> 的清理机制并不完全相同。不能把某框架的 <code>release()</code> 修复照搬到所有直接缓冲区，也不应依赖内部 Cleaner 接口强制回收。</p>
+</section>
+<section id="修复明确每条分支的资源所有权" class="level2">
+<h2>修复：明确每条分支的资源所有权</h2>
+<p>当班降低文件代理并发，限制单请求体积，滚动替换异常实例。正式修复按照所用框架的引用计数约定覆盖成功、失败、取消与写出失败路径；在适合的边界使用 <code>try/finally</code>，但异步写出必须等所有权转移或回调完成，不能方法一返回就提前释放。</p>
+<p>团队在预发布开启框架支持的泄漏检测，压测正常及错误路径。高强度泄漏检测可能明显影响性能，因此不默认长期开启最昂贵级别。监控同时记录池中已预留、已使用及活跃分配，区分正常池化保留与未归还资源。</p>
+<p>验证要求错误流量结束后活跃缓冲区回到基线，直接内存进入稳定范围，容器余量充足。增加 <code>MaxDirectMemorySize</code> 只能在总预算允许时缓解受该限制约束的分配；它并不限制所有第三方原生内存，也不会修好遗漏释放。</p>
+</section>
+<section id="复盘不要把所有堆外都叫直接内存" class="level2">
+<h2>复盘：不要把所有堆外都叫直接内存</h2>
+<p>线程栈、元空间、代码缓存、GC 数据结构、原生库、映射文件与直接缓冲区属于不同来源。先确认是哪一类在增长，再选择工具。</p>
+</section>
+</section>
+<section id="第六章没有高-cpu也没有-gc锁住的转账" class="level1">
+<h1>第六章：没有高 CPU，也没有 GC——锁住的转账</h1>
+<section id="症状少量请求永远回不来" class="level2">
+<h2>症状：少量请求永远回不来</h2>
+<p>一次活动中，转账接口开始超时。开始只有几笔，随后线程池可用线程越来越少。数据库并没有相应的慢查询，堆和 CPU 也很平稳。重启立刻恢复，但同样的业务组合又触发了故障。</p>
+<p>这与第四章的线程池耗尽表象相近，区别在于工作线程没有等待远端，而是等待彼此手中的锁。</p>
+</section>
+<section id="定位还原等待图" class="level2">
+<h2>定位：还原等待图</h2>
+<p><code>jcmd 24680 Thread.print -l</code> 的末尾报告了 Java 级死锁。简化证据为：</p>
+<pre class="text"><code>worker-17 持有账户 A 的监视器，等待账户 B
+worker-29 持有账户 B 的监视器，等待账户 A</code></pre>
+<p>多份快照中，锁地址与等待关系保持不变。团队将对象映射回业务调用：一个请求从 A 转 B，另一个从 B 转 A。代码都按照“先锁转出账户，再锁转入账户”的顺序执行，于是形成闭环。</p>
+<p>自动死锁检测很有用，但没有报告不等于没有等待环。任务之间等待 Future、线程池内部互相等待、分布式锁循环或数据库事务死锁，未必会被 JVM 的 Java 锁检测报告覆盖。必须按资源建立等待关系。</p>
+</section>
+<section id="根因业务方向决定了相反的加锁顺序" class="level2">
+<h2>根因：业务方向决定了相反的加锁顺序</h2>
+<pre class="java"><code>synchronized (from) {
+    synchronized (to) {
+        moveMoney(from, to, amount);
+    }
+}</code></pre>
+<p>如果两次请求方向相反，两条线程就可能各占一个锁。降低概率的延时或随机重试并不能消除结构性问题。给入口 Future 设置超时也不能自动释放另一个工作线程已经持有的监视器。</p>
+</section>
+<section id="修复统一资源顺序" class="level2">
+<h2>修复：统一资源顺序</h2>
+<p>当班停止接收新转账，按业务流水核对是否已入账，再摘流和替换死锁实例，避免恢复动作造成重复扣款。正式修复要求所有涉及多个账户的路径按稳定且唯一的账户 ID 顺序获取锁；同账户转账另行处理。</p>
+<p>该规则还有一个前提：同一账户在锁注册表中对应同一个锁对象。若每次加载都创建不同账户对象，对象锁根本不能保障业务互斥。<code>identityHashCode</code> 也不是业务唯一 ID，可能碰撞，不宜未经处理地作为全局排序依据。</p>
+<p>多实例部署时，进程内锁只能保护当前 JVM。真实资金一致性仍需数据库事务、合适的隔离或条件更新及幂等约束；本案的锁顺序修复不替代这些机制。</p>
+<p>验证同时发起 A→B 与 B→A、高并发交叉转账和异常中断，检查锁顺序与业务不变量。有限压测不能数学证明没有死锁；统一顺序的设计审查与所有调用点检查才是关键证据。</p>
+</section>
+<section id="复盘线程池扩容会藏住死锁" class="level2">
+<h2>复盘：线程池扩容会藏住死锁</h2>
+<p>增加线程数会延后线程全部耗尽的时刻，却不会解开已经形成的等待环。遇到低 CPU 和超时，先读线程在等待什么。</p>
+</section>
+</section>
+<section id="第七章测试能跑生产却找不到方法类加载冲突" class="level1">
+<h1>第七章：测试能跑，生产却找不到方法——类加载冲突</h1>
+<section id="症状类明明在包里" class="level2">
+<h2>症状：类明明在包里</h2>
+<p>支付服务发布后，只有一个新通道报 <code>NoSuchMethodError</code>。开发者打开构建产物，确实能找到报错的类，于是怀疑生产机器缓存了旧文件。盲目清缓存之前，团队先保留完整异常栈和部署包校验值。</p>
+<p><code>ClassNotFoundException</code> 往往出现在显式加载类的过程；<code>NoClassDefFoundError</code> 可能是链接时无法定义类，也可能是此前类初始化失败的后续表现；<code>NoSuchMethodError</code> 则表示运行时的方法解析与调用方预期不一致。这些名字相似，排查起点却不同。</p>
+</section>
+<section id="定位查运行时加载来源而非只查仓库" class="level2">
+<h2>定位：查运行时加载来源，而非只查仓库</h2>
+<p>先检查依赖解析：</p>
+<pre class="bash"><code>./mvnw dependency:tree -Dverbose</code></pre>
+<p>这是 Maven 项目的示例，需在有 wrapper 的工程目录执行。依赖树解释构建解析结果，却不保证与容器共享库、启动脚本和外置插件路径一致。</p>
+<p>在隔离复现环境中开启 JDK 17 类加载日志：</p>
+<pre class="text"><code>-Xlog:class+load=info:file=/var/log/app/classes.log:time,level,tags</code></pre>
+<p>日志显示，被调用的客户端类来自容器共享目录中的旧 JAR，而新业务代码按新版 SDK 编译。团队还用 <code>javap</code> 检查运行时 JAR 的实际方法描述符：</p>
+<pre class="bash"><code>javap -classpath /opt/shared/payment-sdk.jar -s com.example.pay.Client</code></pre>
+<p>不仅要比方法名，还要比参数和返回类型构成的描述符。完整类名相同并不能证明类相同：在 JVM 中，类身份还包括定义它的类加载器。不同加载器定义的同名类甚至可能出现“某类型不能转换为同名类型”的异常。</p>
+</section>
+<section id="根因编译依赖与部署依赖脱节" class="level2">
+<h2>根因：编译依赖与部署依赖脱节</h2>
+<p>构建包带着新版 SDK，运行容器却按其类加载策略优先选择共享目录中的旧版。新业务调用的方法在旧版根本不存在。回滚业务后错误消失，是辅助证据；加载来源与方法签名才说明了具体机制。</p>
+<p>如果异常是 <code>Could not initialize class</code>，就不能沿用这个结论。应寻找进程最早的 <code>ExceptionInInitializerError</code>，检查静态初始化内部真正的异常；后续错误可能只是类已处于错误状态的结果。</p>
+</section>
+<section id="修复让运行依赖可复现" class="level2">
+<h2>修复：让运行依赖可复现</h2>
+<p>当班回滚并确认流水幂等。正式修复移除不再需要的共享 SDK，统一依赖版本，排除冲突的传递依赖，并把实际启动方式纳入发布测试。对于必须隔离的插件依赖，使用清晰的加载边界；必要时做依赖重定位，但要评估反射、资源路径和服务发现是否受影响。</p>
+<p>不要把所有问题都归给“父优先”。标准委派模型、应用服务器与插件框架可能采用不同策略，要用加载来源证明实际行为。</p>
+<p>验证在与生产相同的容器镜像、启动脚本和外置目录中运行，调用出错的那条方法，并检查关键类来源。只跑单元测试不足以覆盖部署路径差异。</p>
+</section>
+<section id="复盘交付的不只是一个-jar" class="level2">
+<h2>复盘：交付的不只是一个 JAR</h2>
+<p>运行时类路径、模块路径、共享目录和类加载器策略都是交付物的一部分。排查链接错误时，先问“哪个加载器，从哪里，加载了哪个版本”。</p>
+</section>
+</section>
+<section id="第八章规则越更新元空间越大类加载器泄漏" class="level1">
+<h1>第八章：规则越更新，元空间越大——类加载器泄漏</h1>
+<section id="症状堆没满metaspace-先报警" class="level2">
+<h2>症状：堆没满，Metaspace 先报警</h2>
+<p>规则平台支持不停机更新脚本。每次更新都会生成一批类，创建一个类加载器。运行一天后，已加载类数和元空间占用持续增长，最终出现 <code>OutOfMemoryError: Metaspace</code>。</p>
+<p>把 <code>MaxMetaspaceSize</code> 调大后，故障出现得更晚。团队转而把类数量和规则版本数画到一起，发现每次规则更新都会留下几乎固定的一批旧类。</p>
+</section>
+<section id="定位旧版本为什么还活着" class="level2">
+<h2>定位：旧版本为什么还活着</h2>
+<p>基础信息从以下命令开始：</p>
+<pre class="bash"><code>jcmd 24680 VM.classloader_stats
+jcmd 24680 VM.flags</code></pre>
+<p>命令是否存在以目标 JDK 帮助为准。类加载器统计中，大量旧规则加载器仍有类占用。JDK 17 可用 <code>-Xlog:class+unload=info</code> 观察卸载事件；但日志中暂时没出现卸载，不能单独证明泄漏，还要考虑是否经历了合适的回收周期及卸载配置。</p>
+<p>在摘流实例的堆转储里，团队沿加载器的 GC Roots 路径找到了旧规则创建的定时任务。任务调度器长期存活，任务对象属于旧加载器；线程的 context class loader 也指向旧版本。</p>
+<pre class="text"><code>调度器 / 存活线程
+  → 旧规则任务或上下文类加载器
+    → 旧 ClassLoader
+      → 旧版本类元数据</code></pre>
+<p>堆转储主要呈现 Java 对象关系，不是把原生元空间内容完整搬进堆里。它能帮助解释加载器为何可达，再与元空间和类统计组合判断。</p>
+</section>
+<section id="根因卸载文件不等于卸载类" class="level2">
+<h2>根因：卸载文件不等于卸载类</h2>
+<p>业务更新流程替换了 JAR，却没有停止旧版本启动的任务、线程和监听器。只要旧加载器及其类仍通过这些关系被持有，相关类就无法满足卸载条件。<code>URLClassLoader.close()</code> 可以释放其持有的某些资源，但不等于强制卸载类。</p>
+<p>同类问题还可能来自 ThreadLocal、驱动注册、日志框架、全局监听器和动态代理缓存。不能因为某一项在别的事故里常见，就跳过根路径分析。</p>
+</section>
+<section id="修复把卸载当成有协议的生命周期" class="level2">
+<h2>修复：把卸载当成有协议的生命周期</h2>
+<p>当班暂停热更新，滚动替换实例。正式实现为每个规则版本定义启动和停止协议：停止接收新任务，等待或取消在途任务，关闭自建执行器，注销监听器，清理上下文引用，然后释放版本引用。任何一步失败都记录并阻止无限创建新版本。</p>
+<p>对无法可靠卸载的第三方组件，团队改用独立工作进程，按版本轮换进程。进程隔离有启动和资源成本，却能为难以控制的全局状态建立清楚的回收边界。</p>
+<p>验证连续执行超过原故障次数的更新，在适合的回收后检查旧加载器数量、卸载日志和元空间趋势。元空间提交内存未立即降回起点不必然说明泄漏，分配器会保留容量；关键是旧加载器是否消失、后续更新是否复用空间并进入平台期。</p>
+</section>
+<section id="复盘可热加载不等于可热卸载" class="level2">
+<h2>复盘：可热加载，不等于可热卸载</h2>
+<p>插件系统最难的接口常常不是 <code>start()</code>，而是 <code>stop()</code>。每一个全局注册点都应有对应的注销动作与可验证结果。</p>
+</section>
+</section>
+<section id="第九章没有-oom-日志进程突然没了容器内存超限" class="level1">
+<h1>第九章：没有 OOM 日志，进程突然没了——容器内存超限</h1>
+<section id="症状退出码-137-不是完整结论" class="level2">
+<h2>症状：退出码 137 不是完整结论</h2>
+<p>一次峰值流量后，Pod 不断重启。应用最后一条日志还很正常，没有 Java 堆异常，也没有生成 heap dump。编排平台显示上次终止为 <code>OOMKilled</code>，退出码 137。</p>
+<p>137 通常与 SIGKILL 对应，但人为 <code>kill -9</code> 等情况也会产生相同退出码。必须结合容器终止原因、内核或 cgroup 证据判断，不能只凭数字下结论。</p>
+</section>
+<section id="定位从-jvm-外面开始取证" class="level2">
+<h2>定位：从 JVM 外面开始取证</h2>
+<p>先保留 Pod 的上次终止状态、事件、节点信息和历史指标。Kubernetes 场景可用：</p>
+<pre class="bash"><code>kubectl describe pod example-pod -n example-ns
+kubectl logs example-pod -n example-ns --previous</code></pre>
+<p>Pod 和命名空间是占位名。多容器 Pod 需要指定容器，事件与历史日志可能已经轮转，应尽早采集。</p>
+<p>cgroup v2 环境下，检查对应控制组的 <code>memory.current</code>、<code>memory.max</code>、<code>memory.events</code>，以及可用时的 <code>memory.peak</code>。路径需要从实际挂载与进程 cgroup 关系解析，不能假设一定在固定目录。<code>oom_kill</code> 计数增加支持控制组 OOM 杀进程；累计计数须结合基线和时间看，节点全局 OOM 又是另一条路径。</p>
+<p>容器限制为 2 GiB，JVM 却设了 <code>-Xmx1536m</code>。同时还有直接缓冲区、数百个线程栈、元空间、代码缓存、GC 结构和原生库。容器记账还可能包含文件页缓存等项目，不能用“进程堆 + 几项原生指标”要求精确闭合。</p>
+</section>
+<section id="根因把剩余-512-mib-当作无限空间" class="level2">
+<h2>根因：把剩余 512 MiB 当作无限空间</h2>
+<p>堆并未达到自身上限，但进程及控制组总占用触碰硬限制，内核杀掉进程。SIGKILL 不给 JVM 执行正常关闭或生成堆转储的机会，因此没有 Java OOM 日志是合理结果。</p>
+<p>排查还发现服务可创建过多平台线程。<code>-Xss</code> 对栈预留与实际提交的影响不同，线程数乘 <code>-Xss</code> 只是粗略容量估算，不能当作当前 RSS。盲目减小栈也可能引入 <code>StackOverflowError</code>。</p>
+</section>
+<section id="修复用总预算安排堆" class="level2">
+<h2>修复：用总预算安排堆</h2>
+<p>当班降并发、限制线程数，并在节点资源允许时临时增加容器限制。正式配置从真实峰值测量出发，为堆外、线程、突发和工具采集留余量，再决定堆上限。</p>
+<p>一个仅用于说明的预算是：2 GiB 限制中，堆最多 1024 MiB，测得其他主要占用峰值约 550 MiB，其余约 474 MiB 用于不确定性和突发。这不是通用比例；原生库重、线程多或大量映射文件的服务需要不同预算。</p>
+<p>现代 HotSpot 通常支持容器资源识别，但具体支持与默认行为取决于版本和发行版。使用 <code>jcmd &lt;pid&gt; VM.flags</code> 及环境适用的容器诊断日志确认实际配置，不要只看部署模板中的意图。显式 <code>-Xmx</code> 与百分比参数的关系也应检查最终结果。</p>
+<p>验证同时覆盖峰值业务、错误重试、批量任务与部署重叠期，观察容器内存峰值、OOM 计数和尾延迟。只让单个接口成功一次不足以证明容量安全。</p>
+</section>
+<section id="复盘进程消失时证据可能在进程外" class="level2">
+<h2>复盘：进程消失时，证据可能在进程外</h2>
+<p>JVM 不是所有内存问题的最终裁判。应用日志沉默时，应沿容器、内核、节点和编排事件继续追踪。</p>
+</section>
+</section>
+<section id="第十章一条请求烧满一个核cpu-热点与正则回溯" class="level1">
+<h1>第十章：一条请求烧满一个核——CPU 热点与正则回溯</h1>
+<section id="症状扩容后每台仍偶尔卡住" class="level2">
+<h2>症状：扩容后，每台仍偶尔卡住</h2>
+<p>网关校验服务某次发布后 CPU 飙升，GC 时间占比却很低。每台机器只有少数线程特别忙，长请求与某类输入相关。扩容稀释了压力，却没有让单次请求完成得更快。</p>
+<p>这时首先要分清 CPU 真忙还是被限流。容器 CPU quota、宿主机争抢与应用计算是不同问题；主机总体 CPU 低，也可能有一个核或一个容器配额已经饱和。</p>
+</section>
+<section id="定位从操作系统线程走到-java-栈" class="level2">
+<h2>定位：从操作系统线程走到 Java 栈</h2>
+<p>Linux 上先观察线程级 CPU：</p>
+<pre class="bash"><code>top -H -p 24680
+printf &#39;%x\n&#39; 24731
+jcmd 24680 Thread.print -l &gt; /secure/cpu-threads.txt</code></pre>
+<p>把观察到的十进制原生线程 ID 转为十六进制，再到 HotSpot 线程转储中匹配 <code>nid=0x...</code>。这里的 24731 只是示例；容器与宿主机 PID 命名空间可能不同，必须确保两边看到的是同一命名空间的线程。</p>
+<p>连续快照显示热线程反复出现在 <code>java.util.regex.Pattern</code> 的匹配调用中。有限时长的 JFR CPU 采样也指向同一校验方法。单个栈命中只能说明采样瞬间的位置，多次采样与方法耗时关联才更有说服力。</p>
+</section>
+<section id="根因失败输入比成功输入昂贵得多" class="level2">
+<h2>根因：失败输入比成功输入昂贵得多</h2>
+<p>代码使用了类似下式的表达式：</p>
+<pre class="text"><code>^(a+)+$</code></pre>
+<p>这只是说明嵌套量词歧义的教学模式。某些输入在末尾加入不匹配字符时，会让回溯型引擎尝试大量分割组合；实际复杂度和优化与模式及 JDK 实现有关，不应把任何一次本机耗时推广为所有版本的结论。</p>
+<p>业务真实规则也有类似的嵌套与歧义。正常短输入很快，因此单元测试没有暴露；极长、接近匹配但最终失败的输入才触发 CPU 放大。</p>
+</section>
+<section id="修复减少表达歧义限制输入成本" class="level2">
+<h2>修复：减少表达歧义，限制输入成本</h2>
+<p>当班对入口长度和频率加限制，暂时使用更简单的校验规则。正式修复将该规则改成明确的字符扫描和长度判断；适合的场景也可评估保证线性时间的引擎，但语法和功能未必与 Java 正则完全一致。</p>
+<p>不能盲目把所有量词改成占有量词或原子组，因为它们可能改变匹配语义。也不能以为给 Future 设置超时就能停止 Java 正则：计算路径不保证响应线程中断，超时返回后 CPU 可能继续消耗。</p>
+<p>回归测试包含合法输入、非法输入、边界长度和逐步增长的近似匹配失败输入；对危险旧模式只在隔离进程中用小规模、严格运行时限验证，避免把复现实验变成新的资源耗尽。对修复后的校验器记录输入规模与耗时关系，并检查功能结果一致。</p>
+<p>案例中，规则扫描成本随输入长度近似线性增长，入口上限使单次请求成本可估计。CPU、拒绝量和调用耗时都纳入监控，而不是只看平均吞吐。</p>
+</section>
+<section id="复盘负载不仅是每秒多少请求" class="level2">
+<h2>复盘：负载不仅是每秒多少请求</h2>
+<p>相同 QPS 可以带来完全不同的计算量。请求长度、结构、压缩比和失败路径都应进入容量模型。</p>
+</section>
+</section>
+<section id="收束把一次排查变成团队能力" class="level1">
+<h1>收束：把一次排查变成团队能力</h1>
+<p>十个案例表面不同，推进方法相近：先界定症状和影响，再用时间线连接证据，构造可验证的假设，最后让修复针对机制。一次恢复不是根因证明，一次压测通过也不是永远安全。</p>
+<section id="一张能用的首轮排查表" class="level2">
+<h2>一张能用的首轮排查表</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>首要信号</th>
+<th>先取什么证据</th>
+<th>下一步问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>延迟与暂停同时尖峰</td>
+<td>GC、安全点和请求时间线</td>
+<td>是 STW，还是同时发生的其他等待？</td>
+</tr>
+<tr>
+<td>回收后堆持续增长</td>
+<td>可比直方图、受控堆转储</td>
+<td>哪条根路径违反生命周期？</td>
+</tr>
+<tr>
+<td>低 CPU、队列上涨</td>
+<td>连续线程栈、连接池指标</td>
+<td>在等远端、锁，还是池内任务？</td>
+</tr>
+<tr>
+<td>RSS 涨而堆平稳</td>
+<td>容器、BufferPool、NMT、框架指标</td>
+<td>哪类原生占用在增长？</td>
+</tr>
+<tr>
+<td>类或方法解析失败</td>
+<td>首次异常、加载来源、运行依赖</td>
+<td>编译和运行是否使用相同契约？</td>
+</tr>
+<tr>
+<td>进程消失</td>
+<td>终止原因、cgroup、内核事件</td>
+<td>谁发出了终止信号，为什么？</td>
+</tr>
+<tr>
+<td>CPU 热点</td>
+<td>线程 CPU、栈、有限采样</td>
+<td>是业务计算、GC，还是配额限制？</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="值班记录模板" class="level2">
+<h2>值班记录模板</h2>
+<p>每次事故至少留下：影响范围、首次异常时间、最近变更、时区与时钟偏差、关键指标、采集位置、脱敏方式、操作时间，以及每个假设被支持或排除的理由。把“已知”“推测”“尚未验证”写清楚，比堆满截图更有用。</p>
+<p>根因报告不应只写“内存不足”。应写到机制，例如：“请求 ID 进入缓存键，使无界 Map 每次请求新增条目；静态引用使历史结果不能回收；峰值流量让堆在三小时内耗尽。”这样的表述才自然导向修复与验证。</p>
+</section>
+<section id="验证修复的四个问题" class="level2">
+<h2>验证修复的四个问题</h2>
+<ol type="1">
+<li>同样的触发条件还会出现吗？用原故障输入、并发、运行时长和部署环境验证。</li>
+<li>原证据链是否被打断？看根引用消失、等待有界或运行依赖一致，而不只看告警消失。</li>
+<li>压力是否被转移？关闭缓存可能打满数据库，限制线程可能增加拒绝，流式输出可能占住连接。</li>
+<li>恢复是否自动发生？移除故障注入后，队列、资源和吞吐应回到稳定状态。</li>
+</ol>
+</section>
+</section>
+<section id="附录-a命令使用前的检查" class="level1">
+<h1>附录 A：命令使用前的检查</h1>
+<p>以下均为 HotSpot JDK 17 常见命令，实际能力以目标版本为准。PID 不要照抄书中数字。</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>命令或数据</th>
+<th>用途</th>
+<th>主要限制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>jcmd &lt;pid&gt; help</code></td>
+<td>列出可用诊断命令</td>
+<td>需进程可访问且 attach 可用</td>
+</tr>
+<tr>
+<td><code>jcmd &lt;pid&gt; VM.version</code></td>
+<td>确认 JVM 版本</td>
+<td>工具与目标版本需兼容</td>
+</tr>
+<tr>
+<td><code>jcmd &lt;pid&gt; VM.flags</code></td>
+<td>查看生效选项</td>
+<td>不能单靠模板推断运行配置</td>
+</tr>
+<tr>
+<td><code>jcmd &lt;pid&gt; GC.heap_info</code></td>
+<td>快看堆信息</td>
+<td>瞬时信息不说明泄漏</td>
+</tr>
+<tr>
+<td><code>jcmd &lt;pid&gt; Thread.print -l</code></td>
+<td>线程栈与锁线索</td>
+<td>有采集开销，可能包含敏感内容</td>
+</tr>
+<tr>
+<td><code>jcmd &lt;pid&gt; GC.class_histogram</code></td>
+<td>类数量与大小分布</td>
+<td>可能影响停顿，不能给出持有路径</td>
+</tr>
+<tr>
+<td><code>jcmd &lt;pid&gt; GC.heap_dump &lt;path&gt;</code></td>
+<td>对象关系分析</td>
+<td>大文件、可能长暂停、敏感数据</td>
+</tr>
+<tr>
+<td><code>jcmd &lt;pid&gt; JFR.start ...</code></td>
+<td>记录 CPU、分配等事件</td>
+<td>配置决定覆盖与成本，采样不是全量</td>
+</tr>
+<tr>
+<td><code>jcmd &lt;pid&gt; VM.native_memory ...</code></td>
+<td>HotSpot 原生内存分类</td>
+<td>需提前启用 NMT，覆盖并不完整</td>
+</tr>
+</tbody>
+</table>
+<p>执行诊断通常需要合适的操作系统身份、attach 权限和 PID 命名空间。容器中还可能缺少完整 JDK。不要为了让一次命令成功就任意放宽整个生产容器权限；可使用经过批准的诊断镜像或复制故障环境复现。</p>
+<p>采集前确认输出目录权限与剩余空间；大文件使用独立卷，避免填满应用日志或根盘。不要一次同时对整个集群执行重型诊断。采集后校验文件确实生成，再按策略转移和删除，记录证据所属实例、版本与时间。</p>
+</section>
+<section id="附录-b版本与术语速查" class="level1">
+<h1>附录 B：版本与术语速查</h1>
+<p><strong>GC 后占用。</strong> 比较相近回收阶段的存活数据，而非简单比较两张任意时刻的堆图。G1 的普通年轻代回收不一定回收所有老年代垃圾。</p>
+<p><strong>吞吐与尾延迟。</strong> 吞吐反映单位时间完成量；P99 描述一段统计窗口内较慢的一端。不同实例和窗口的分位数不能简单求平均当作全局分位数。</p>
+<p><strong>保留大小。</strong> Dominator 分析中的 retained size 依赖对象图与工具算法，不能把多个互相重叠的保留集合随意相加。</p>
+<p><strong>平台线程与虚拟线程。</strong> 本书线程数、原生线程 ID 和栈预算主要针对平台线程。JDK 21 起虚拟线程正式可用，其调度、观测及某些阻塞行为随后续版本演进；不能用“一个 Java 线程对应一个 OS 线程”解释所有虚拟线程场景。</p>
+<p><strong>JDK 8 与 JDK 17。</strong> 统一日志体系自 JDK 9 引入；JFR 在不同 JDK 8 发行版中的可用性和授权历史不同。容器感知也随补丁演进。使用旧环境时，查该发行版文档，而不是把本书命令去掉几个参数后盲试。</p>
+</section>
+<section id="附录-c继续查证的官方入口" class="level1">
+<h1>附录 C：继续查证的官方入口</h1>
+<p>下列资料用于核对工具与机制，具体选项应匹配实际使用版本。本书未声称逐项在所有发行版上实测。</p>
+<ul>
+<li><a href="https://docs.oracle.com/en/java/javase/17/docs/specs/man/jcmd.html">JDK 17 jcmd 工具参考</a>：诊断命令、参数及影响说明。</li>
+<li><a href="https://docs.oracle.com/en/java/javase/17/docs/specs/man/java.html">JDK 17 java 启动器参考</a>：堆、线程栈、统一日志、NMT 等选项。</li>
+<li><a href="https://docs.oracle.com/en/java/javase/17/gctuning/garbage-first-garbage-collector-tuning.html">JDK 17 G1 调优指南</a>：G1 工作方式与大对象相关调优。</li>
+<li><a href="https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html">Java 虚拟机规范第 5 章</a>：加载、链接与初始化。</li>
+<li><a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/ThreadLocal.html">ThreadLocal API</a>：线程局部变量的接口与 <code>remove()</code>。</li>
+<li><a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.management/java/lang/management/BufferPoolMXBean.html">BufferPoolMXBean API</a>：缓冲池指标及估计值语义。</li>
+<li><a href="https://docs.kernel.org/admin-guide/cgroup-v2.html">Linux cgroup v2 文档</a>：内存控制器、事件计数与资源记账。</li>
+<li><a href="https://kubernetes.io/docs/tasks/configure-pod-container/assign-memory-resource/">Kubernetes 容器内存管理</a>：资源限制与 OOM 行为。</li>
+<li><a href="https://help.eclipse.org/latest/topic/org.eclipse.mat.ui.help/welcome.html">Eclipse MAT 文档</a>：支配树、保留大小与根路径分析。</li>
+</ul>
+<p>读完这些故事，下一次告警不会自动变简单。但你会知道先保留什么、哪些结论还不能下，以及怎样把“看起来像”推进到“证据说明”。</p>
+</section>
+</article>
+  <footer>读到这里，下一次告警就有了新的起点。<a href="#top">回到书首 ↑</a></footer>
+</main>
+<noscript><p class="noscript">正文和目录无需 JavaScript 即可阅读；搜索和进度保存需要启用 JavaScript。</p></noscript>
+</body>
+</html>
